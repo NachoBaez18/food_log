@@ -1,31 +1,29 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import '../domain/meal.dart';
+import '../../../core/database/local_database.dart';
 
-final storeProvider = Provider((ref) => MealStore());
+final storeProvider = Provider((ref) { final store=MealStore(); ref.onDispose(store.close); return store; });
 final mealsProvider = FutureProvider((ref) => ref.watch(storeProvider).load());
 
 class MealStore {
+  Future<LocalDatabase>? _opening;
+  Future<LocalDatabase> database() => _opening ??= _open();
+  Future<LocalDatabase> _open() async {
+    final dir=await directory();
+    final db=LocalDatabase(File('${dir.path}/meals.sqlite'));
+    try { await db.migrateLegacy(dir); return db; } catch (_) { await db.close(); rethrow; }
+  }
+  void close() { _opening?.then((db)=>db.close(),onError:(Object _){}); }
   Future<Directory> directory() async {
     final root = await getApplicationDocumentsDirectory();
     return Directory('${root.path}/foodlog').create(recursive: true);
   }
   Future<File> photo(Meal meal) async => File('${(await directory()).path}/${meal.id}.jpg');
-  Future<List<Meal>> load() async {
-    final dir = await directory();
-    final result = <Meal>[];
-    await for (final entry in dir.list()) {
-      if (entry is File && entry.path.endsWith('.json')) {
-        result.add(Meal.fromJson(jsonDecode(await entry.readAsString()) as Map<String,dynamic>));
-      }
-    }
-    result.sort((a,b) => b.capturedAt.compareTo(a.capturedAt));
-    return result;
-  }
+  Future<List<Meal>> load() async => (await database()).readMeals();
   Future<void> save(Meal meal, String source) async {
     final decoded = img.decodeImage(await File(source).readAsBytes());
     if (decoded == null) throw const FormatException('Imagen no válida');
@@ -63,12 +61,10 @@ class MealStore {
     await writeMetadata(meal);
   }
   Future<void> writeMetadata(Meal meal) async {
-    final file = File('${(await directory()).path}/${meal.id}.json');
-    final temp = File('${file.path}.tmp');
-    await temp.writeAsString(jsonEncode(meal.toJson()), flush: true);
-    await temp.rename(file.path);
+    await (await database()).put(meal);
   }
   Future<void> delete(Meal meal) async {
+    await (await database()).remove(meal.id);
     final meta = File('${(await directory()).path}/${meal.id}.json');
     if (await meta.exists()) await meta.delete();
     final file = await photo(meal);
