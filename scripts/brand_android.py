@@ -21,3 +21,36 @@ tree=ET.parse(manifest)
 app=tree.getroot().find('application')
 app.set('{http://schemas.android.com/apk/res/android}label','FoodLog')
 tree.write(manifest,encoding='utf-8',xml_declaration=True)
+
+# Preserve Flutter's launch theme and customize only its background.
+for folder in ['drawable','drawable-v21']:
+    target=res / folder
+    target.mkdir(parents=True,exist_ok=True)
+    (target/'launch_background.xml').write_text('''<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/foodlog_splash" />
+    <item><bitmap android:gravity="center" android:src="@mipmap/ic_launcher" /></item>
+</layer-list>''',encoding='utf-8')
+for folder in ['values','values-night']:
+    target=res / folder
+    target.mkdir(parents=True,exist_ok=True)
+    (target/'foodlog_colors.xml').write_text('<resources><color name="foodlog_splash">#2D6A4F</color></resources>',encoding='utf-8')
+for folder in ['values-v31','values-night-v31']:
+    target=res / folder
+    target.mkdir(parents=True,exist_ok=True)
+    styles=target/'styles.xml'
+    if styles.exists():
+        tree=ET.parse(styles)
+        root=tree.getroot()
+    else:
+        root=ET.Element('resources')
+        tree=ET.ElementTree(root)
+    style=next((s for s in root.findall('style') if s.get('name')=='LaunchTheme'),None)
+    if style is None:
+        style=ET.SubElement(root,'style',{'name':'LaunchTheme','parent':'@android:style/Theme.Light.NoTitleBar'})
+    for name,value in [('android:windowSplashScreenBackground','@color/foodlog_splash'),('android:windowSplashScreenAnimatedIcon','@mipmap/ic_launcher'),('android:windowBackground','@drawable/launch_background')]:
+        item=next((x for x in style.findall('item') if x.get('name')==name),None)
+        if item is None:
+            item=ET.SubElement(style,'item',{'name':name})
+        item.text=value
+    tree.write(styles,encoding='utf-8',xml_declaration=True)
