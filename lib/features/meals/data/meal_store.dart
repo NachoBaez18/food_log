@@ -22,19 +22,30 @@ class MealStore {
     final root = await getApplicationDocumentsDirectory();
     return Directory('${root.path}/foodlog').create(recursive: true);
   }
-  Future<File> photo(Meal meal) async => File('${(await directory()).path}/${meal.id}.jpg');
+  Future<File> photo(Meal meal, [int index=0]) async => File('${(await directory()).path}/${meal.photoStem(index)}.jpg');
+  Future<List<File>> photos(Meal meal) => Future.wait(List.generate(meal.photoCount,(i)=>photo(meal,i)));
   Future<List<Meal>> load() async => (await database()).readMeals();
-  Future<void> save(Meal meal, String source) async {
+  Future<void> save(Meal meal, List<String> sources) async {
+    if(sources.length != meal.photoCount || sources.isEmpty) throw ArgumentError('Cantidad de fotos inválida');
+    await database();
+    try {
+      for(var i=0;i<sources.length;i++){await _savePhoto(meal,sources[i],i);}
+      await writeMetadata(meal);
+    } catch (_) {
+      await _deletePhotos(meal);
+      rethrow;
+    }
+  }
+  Future<void> _savePhoto(Meal meal, String source, int index) async {
     final decoded = img.decodeImage(await File(source).readAsBytes());
     if (decoded == null) throw const FormatException('Imagen no válida');
     final oriented = img.bakeOrientation(decoded);
     final picture = oriented.width > 1600 ? img.copyResize(oriented, width: 1600) : oriented;
-    final original = File('${(await directory()).path}/${meal.id}.original');
+    final original = File('${(await directory()).path}/${meal.photoStem(index)}.original');
     await original.writeAsBytes(await File(source).readAsBytes());
     stamp(picture, meal);
-    final file = await photo(meal);
+    final file = await photo(meal,index);
     await file.writeAsBytes(img.encodeJpg(picture, quality: 85));
-    await writeMetadata(meal);
   }
   void stamp(img.Image picture, Meal meal) {
     final scale = picture.width >= 700 ? 24 : 14;
@@ -48,15 +59,17 @@ class MealStore {
       font: font, x: 12, y: scale + 12, color: img.ColorRgb8(255,255,255));
   }
   Future<void> update(Meal meal) async {
-    final original = File('${(await directory()).path}/${meal.id}.original');
+    for(var index=0;index<meal.photoCount;index++){
+    final original = File('${(await directory()).path}/${meal.photoStem(index)}.original');
     if (await original.exists()) {
       final decoded = img.decodeImage(await original.readAsBytes());
       if (decoded != null) {
         final oriented = img.bakeOrientation(decoded);
         final picture = oriented.width > 1600 ? img.copyResize(oriented, width: 1600) : oriented;
         stamp(picture, meal);
-        await (await photo(meal)).writeAsBytes(img.encodeJpg(picture, quality: 85));
+        await (await photo(meal,index)).writeAsBytes(img.encodeJpg(picture, quality: 85));
       }
+    }
     }
     await writeMetadata(meal);
   }
@@ -67,9 +80,15 @@ class MealStore {
     await (await database()).remove(meal.id);
     final meta = File('${(await directory()).path}/${meal.id}.json');
     if (await meta.exists()) await meta.delete();
-    final file = await photo(meal);
-    if (await file.exists()) await file.delete();
-    final original = File('${(await directory()).path}/${meal.id}.original');
-    if (await original.exists()) await original.delete();
+    await _deletePhotos(meal);
+  }
+  Future<void> _deletePhotos(Meal meal) async {
+    final dir=await directory();
+    for(var i=0;i<meal.photoCount;i++){
+      for(final suffix in ['jpg','original']){
+        final file=File('${dir.path}/${meal.photoStem(i)}.$suffix');
+        if(await file.exists())await file.delete();
+      }
+    }
   }
 }

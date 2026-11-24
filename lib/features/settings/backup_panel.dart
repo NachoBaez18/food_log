@@ -31,13 +31,13 @@ class _BackupPanelState extends ConsumerState<BackupPanel> {
         final existing=(await store.load()).map((m)=>m.id).toSet();
         for(final meal in records){
           if(!RegExp(r'^[0-9]+$').hasMatch(meal.id))throw const FormatException('Identificador no válido');
-          if(archive.findFile('${meal.id}.jpg')==null)throw const FormatException('Faltan fotografías');
+          for(var i=0;i<meal.photoCount;i++)if(archive.findFile('${meal.photoStem(i)}.jpg')==null)throw const FormatException('Faltan fotografías');
         }
         for(final meal in records){
           if(existing.contains(meal.id))continue;
-          for(final suffix in ['jpg','original']){
-            final entry=archive.findFile('${meal.id}.$suffix');
-            if(entry!=null)await File('${dir.path}/${meal.id}.$suffix').writeAsBytes(entry.content as List<int>);
+          for(var i=0;i<meal.photoCount;i++)for(final suffix in ['jpg','original']){
+            final entry=archive.findFile('${meal.photoStem(i)}.$suffix');
+            if(entry!=null)await File('${dir.path}/${meal.photoStem(i)}.$suffix').writeAsBytes(entry.content as List<int>);
           }
           await store.writeMetadata(meal);
         }
@@ -49,11 +49,11 @@ class _BackupPanelState extends ConsumerState<BackupPanel> {
         final metadata=utf8.encode(jsonEncode(records.map((m)=>m.toJson()).toList()));
         archive.addFile(ArchiveFile('meals.json',metadata.length,metadata));
         for(final meal in records){
-          for(final suffix in ['jpg','original']){
-            final file=File('${dir.path}/${meal.id}.$suffix');
+          for(var i=0;i<meal.photoCount;i++)for(final suffix in ['jpg','original']){
+            final file=File('${dir.path}/${meal.photoStem(i)}.$suffix');
             if(await file.exists()){
               final bytes=await file.readAsBytes();
-              archive.addFile(ArchiveFile('${meal.id}.$suffix',bytes.length,bytes));
+              archive.addFile(ArchiveFile('${meal.photoStem(i)}.$suffix',bytes.length,bytes));
             }
           }
         }

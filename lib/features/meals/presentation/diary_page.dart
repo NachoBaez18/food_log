@@ -32,10 +32,11 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
       final file = await ImagePicker().pickImage(source: ImageSource.camera);
       if (file == null || !mounted) return;
       final now = DateTime.now();
+      final sources = <String>[file.path];
       final meal = await showModalBottomSheet<Meal>(context: context, isScrollControlled: true,
-        builder: (_) => MealEditor(at: now, source: file.path));
-      if (meal == null) return;
-      await ref.read(storeProvider).save(meal,file.path);
+        builder: (_) => MealEditor(at: now, source: file.path, sources: sources));
+      if (meal == null || !mounted) return;
+      await ref.read(storeProvider).save(meal,sources);
       ref.invalidate(mealsProvider);
       if (mounted) setState(() => week = monday(meal.capturedAt));
     } catch(e) { error(e); }
@@ -44,7 +45,8 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
   Future<void> share(List<Meal> meals) async {
     try {
       final store = ref.read(storeProvider);
-      final files = await Future.wait(meals.reversed.map((m) async => XFile((await store.photo(m)).path)));
+      final files = <XFile>[];
+      for(final meal in meals.reversed){files.addAll((await store.photos(meal)).map((f)=>XFile(f.path)));}
       if (files.isNotEmpty) await Share.shareXFiles(files, text: 'Registro semanal de comidas');
     } catch(e) { error(e); }
   }
@@ -60,7 +62,7 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
   }
   Future<void> remove(Meal meal) async {
     final yes = await showDialog<bool>(context: context,builder: (ctx) => AlertDialog(
-      title: const Text('Eliminar registro'), content: const Text('Se eliminará también la fotografía.'),
+      title: const Text('Eliminar registro'), content: const Text('Se eliminarán también todas las fotografías.'),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx,false),child: const Text('Cancelar')),
         FilledButton(onPressed: () => Navigator.pop(ctx,true),child: const Text('Eliminar'))]));
     if (yes == true) {
@@ -101,8 +103,8 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
           ]))),
           if (meals.isEmpty) const Padding(padding: EdgeInsets.all(32),child: Column(children:[Icon(Icons.restaurant_menu,size:48),SizedBox(height:12),Text('Todavía no hay comidas esta semana.')])),
           for(final meal in visible) Card(clipBehavior: Clip.antiAlias,child: Column(crossAxisAlignment: CrossAxisAlignment.start,children:[
-            FutureBuilder<File>(future: ref.read(storeProvider).photo(meal),builder: (_,s) => s.hasData?GestureDetector(onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>Scaffold(appBar:AppBar(title:Text(meal.type.label)),body:Center(child:InteractiveViewer(child:Image.file(s.data!)))))),child:Image.file(s.data!,height:190,width:double.infinity,fit:BoxFit.cover,errorBuilder: (_,__,___)=>const SizedBox(height:80,child:Center(child:Icon(Icons.broken_image))))):const SizedBox(height:190)),
-            ListTile(title: Text(meal.type.label),subtitle: Text('${DateFormat('dd/MM HH:mm').format(meal.capturedAt)}${meal.notes.isEmpty?'':' • ${meal.notes}'}'),
+            MealPhotos(key:ValueKey('${meal.id}-${meal.capturedAt}-${meal.type.name}'),meal:meal),
+            ListTile(title: Text(meal.type.label),subtitle: Text('${meal.photoCount} foto(s) · ${DateFormat('dd/MM HH:mm').format(meal.capturedAt)}${meal.notes.isEmpty?'':' • ${meal.notes}'}'),
               trailing: PopupMenuButton<String>(onSelected:(v)=>v=='edit'?edit(meal):remove(meal),itemBuilder:(_)=>const [PopupMenuItem(value:'edit',child:Text('Editar')),PopupMenuItem(value:'delete',child:Text('Eliminar'))]))
           ]))
         ]);
@@ -112,15 +114,21 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
 }
 
 class MealEditor extends StatefulWidget {
-  const MealEditor({super.key,required this.at,required this.source,this.existing});
+  const MealEditor({super.key,required this.at,required this.source,this.existing,this.sources});
   final DateTime at;
   final String source;
   final Meal? existing;
+  final List<String>? sources;
   @override
   State<MealEditor> createState()=>_MealEditorState();
 }
 class _MealEditorState extends State<MealEditor> {
+  bool taking=false;
   late DateTime at = widget.at;
+  Future<void> addPhoto() async {
+    setState(()=>taking=true);
+    try{final file=await ImagePicker().pickImage(source:ImageSource.camera);if(file!=null&&mounted)setState(()=>widget.sources!.add(file.path));}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('$e')));}finally{if(mounted)setState(()=>taking=false);}
+  }
   late MealType type = widget.existing?.type ?? MealType.suggest(widget.at);
   late final notes = TextEditingController(text:widget.existing?.notes ?? '');
   @override
@@ -131,7 +139,7 @@ class _MealEditorState extends State<MealEditor> {
     child: SingleChildScrollView(child: Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
       Text('Registrar comida',style:Theme.of(context).textTheme.headlineSmall),
       const SizedBox(height:12),
-      ClipRRect(borderRadius:BorderRadius.circular(16),child:Image.file(File(widget.source),height:160,width:double.infinity,fit:BoxFit.cover)),
+      SizedBox(height:160,child:ListView(scrollDirection:Axis.horizontal,children:[for(final path in widget.sources??[widget.source]) Padding(padding:const EdgeInsets.only(right:8),child:Stack(children:[ClipRRect(borderRadius:BorderRadius.circular(16),child:Image.file(File(path),height:160,width:160,fit:BoxFit.cover)),if((widget.sources?.length??0)>1)Positioned(right:0,top:0,child:IconButton.filled(onPressed:taking?null:()=>setState(()=>widget.sources!.remove(path)),icon:const Icon(Icons.close)))])),if(widget.sources!=null&&widget.sources!.length<12)OutlinedButton(onPressed:taking?null:addPhoto,child:const Column(mainAxisAlignment:MainAxisAlignment.center,children:[Icon(Icons.add_a_photo),Text('Agregar foto')]))])),
       const SizedBox(height:12),
       ListTile(contentPadding:EdgeInsets.zero,leading:const Icon(Icons.schedule),title:Text(DateFormat('dd/MM/yyyy HH:mm').format(at)),trailing:const Icon(Icons.edit_calendar),onTap:() async {final d=await showDatePicker(context:context,initialDate:at,firstDate:DateTime(2000),lastDate:DateTime(2100));if(d==null||!mounted)return;final t=await showTimePicker(context:context,initialTime:TimeOfDay.fromDateTime(at));if(t==null||!mounted)return;setState(()=>at=DateTime(d.year,d.month,d.day,t.hour,t.minute));}),
       const SizedBox(height:12),
@@ -139,6 +147,17 @@ class _MealEditorState extends State<MealEditor> {
       const SizedBox(height:12),
       TextField(controller:notes,decoration:const InputDecoration(labelText:'Observaciones (opcional)',border:OutlineInputBorder()),maxLines:2),
       const SizedBox(height:16),
-      SizedBox(width:double.infinity,child:FilledButton(onPressed:()=>Navigator.pop(context,Meal(id:widget.existing?.id??widget.at.microsecondsSinceEpoch.toString(),capturedAt:at,type:type,notes:notes.text.trim())),child:const Text('Guardar comida')))
+      SizedBox(width:double.infinity,child:FilledButton(onPressed:taking?null:()=>Navigator.pop(context,Meal(id:widget.existing?.id??widget.at.microsecondsSinceEpoch.toString(),capturedAt:at,type:type,notes:notes.text.trim(),photoCount:widget.existing?.photoCount??widget.sources?.length??1)),child:const Text('Guardar comida')))
     ]))));
+}
+
+class MealPhotos extends ConsumerWidget {
+  const MealPhotos({super.key,required this.meal});
+  final Meal meal;
+  @override
+  Widget build(BuildContext context,WidgetRef ref)=>FutureBuilder<List<File>>(future:ref.read(storeProvider).photos(meal),builder:(context,s){
+    final photos=s.data;
+    if(photos==null)return const SizedBox(height:190,child:Center(child:CircularProgressIndicator()));
+    return SizedBox(height:190,child:PageView.builder(itemCount:photos.length,itemBuilder:(context,i)=>GestureDetector(onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>Scaffold(appBar:AppBar(title:Text('${meal.type.label} · ${i+1}/${photos.length}')),body:Center(child:InteractiveViewer(child:Image.file(photos[i])))))),child:Stack(fit:StackFit.expand,children:[Image.file(photos[i],fit:BoxFit.cover,errorBuilder:(_,__,___)=>const Center(child:Icon(Icons.broken_image))),if(photos.length>1)Positioned(bottom:12,right:12,child:Chip(label:Text('${i+1}/${photos.length}')))]))));
+  });
 }
