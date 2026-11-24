@@ -22,7 +22,7 @@ class _BackupPanelState extends ConsumerState<BackupPanel> {
       final store=ref.read(storeProvider);
       final dir=await store.directory();
       if(restore){
-        final picked=await FilePicker.platform.pickFiles(type:FileType.custom,allowedExtensions:['zip']);
+        final picked=await FilePicker.pickFiles(type:FileType.custom,allowedExtensions:['zip']);
         final path=picked?.files.single.path;
         if(path==null)return;
         final archive=ZipDecoder().decodeBytes(await File(path).readAsBytes(),verify:true);
