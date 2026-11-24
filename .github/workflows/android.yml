@@ -32,6 +32,10 @@ jobs:
           git diff --exit-code -- lib test pubspec.yaml
           test -z "$(git status --porcelain -- lib test pubspec.yaml)"
           grep -q 'MealType.suggest' test/widget_test.dart
+      - name: Apply FoodLog branding
+        run: |
+          python3 -m pip install Pillow
+          python3 scripts/brand_android.py
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos --no-fatal-warnings
       - run: flutter test
