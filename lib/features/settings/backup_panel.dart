@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart' show openFile, XTypeGroup;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -22,10 +22,9 @@ class _BackupPanelState extends ConsumerState<BackupPanel> {
       final store=ref.read(storeProvider);
       final dir=await store.directory();
       if(restore){
-        final picked=await FilePicker.pickFiles(type:FileType.custom,allowedExtensions:['zip']);
-        final path=picked?.files.single.path;
-        if(path==null)return;
-        final archive=ZipDecoder().decodeBytes(await File(path).readAsBytes(),verify:true);
+        final picked=await openFile(acceptedTypeGroups: const [XTypeGroup(label: 'Copias ZIP', extensions: ['zip'], mimeTypes: ['application/zip'])]);
+        if(picked==null)return;
+        final archive=ZipDecoder().decodeBytes(await picked.readAsBytes(),verify:true);
         final manifest=archive.findFile('meals.json');
         if(manifest==null)throw const FormatException('Copia de FoodLog no válida');
         final records=(jsonDecode(utf8.decode(manifest.content as List<int>)) as List).map((m)=>Meal.fromJson(m as Map<String,dynamic>)).toList();
