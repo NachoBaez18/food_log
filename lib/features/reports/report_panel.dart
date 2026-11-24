@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'report_collage.dart';
+import 'report_pdf.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
@@ -24,6 +25,14 @@ class _ReportPanelState extends ConsumerState<ReportPanel> {
     }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('No se pudo generar el collage: $e')));}
     finally{if(mounted)setState(()=>busy=false);}
   }
+  Future<void> pdf(List<Meal> meals) async {
+    setState(()=>busy=true);
+    try{
+      final file=await ReportPdf(ref.read(storeProvider)).create(meals);
+      if(mounted)await Share.shareXFiles([XFile(file.path)],text:'Reporte FoodLog');
+    }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('No se pudo generar PDF: $e')));}
+    finally{if(mounted)setState(()=>busy=false);}
+  }
   @override
   Widget build(BuildContext context) {
     final meals=widget.meals.where((m)=>!DateUtils.dateOnly(m.capturedAt).isBefore(range.start)&&!DateUtils.dateOnly(m.capturedAt).isAfter(range.end)).toList();
@@ -40,6 +49,7 @@ class _ReportPanelState extends ConsumerState<ReportPanel> {
       FilledButton.icon(onPressed:selected.isEmpty||busy?null:()async{setState(()=>busy=true);try{final store=ref.read(storeProvider);final files=<XFile>[];for(final meal in selected.reversed){files.addAll((await store.photos(meal)).map((f)=>XFile(f.path)));}await Share.shareXFiles(files,text:'Registro de comidas · ${fmt.format(range.start)} – ${fmt.format(range.end)}');}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('No se pudo compartir: $e')));}finally{if(mounted)setState(()=>busy=false);}},icon:const Icon(Icons.share),label:const Text('Compartir fotografías')),
       const SizedBox(height:12),
       OutlinedButton.icon(onPressed:selected.isEmpty||busy?null:()=>collage(selected),icon:const Icon(Icons.grid_view),label:const Text('Compartir collage por día')),
+      OutlinedButton.icon(onPressed:selected.isEmpty||busy?null:()=>pdf(selected),icon:const Icon(Icons.picture_as_pdf),label:const Text('Compartir reporte PDF')),
       if(busy)const LinearProgressIndicator()
     ]);
   }

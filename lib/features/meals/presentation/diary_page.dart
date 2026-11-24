@@ -52,12 +52,12 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
   }
   Future<void> edit(Meal meal) async {
     final store = ref.read(storeProvider);
-    final file = await store.photo(meal);
+    final sources = await store.editSources(meal);
     if (!mounted) return;
     final updated = await showModalBottomSheet<Meal>(context: context, isScrollControlled: true,
-      builder: (_) => MealEditor(at: meal.capturedAt, source: file.path, existing: meal));
+      builder: (_) => MealEditor(at: meal.capturedAt, source: sources.first, existing: meal, sources: sources));
     if (updated != null) {
-      try { await store.update(updated); ref.invalidate(mealsProvider); } catch(e) { error(e); }
+      try { await store.replacePhotos(meal,updated,sources); if(mounted){ref.invalidate(mealsProvider);setState((){week=monday(updated.capturedAt);selectedDay=null;});} } catch(e) { error(e); }
     }
   }
   Future<void> remove(Meal meal) async {
@@ -103,7 +103,7 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
           ]))),
           if (meals.isEmpty) const Padding(padding: EdgeInsets.all(32),child: Column(children:[Icon(Icons.restaurant_menu,size:48),SizedBox(height:12),Text('Todavía no hay comidas esta semana.')])),
           for(final meal in visible) Card(clipBehavior: Clip.antiAlias,child: Column(crossAxisAlignment: CrossAxisAlignment.start,children:[
-            MealPhotos(key:ValueKey('${meal.id}-${meal.capturedAt}-${meal.type.name}'),meal:meal),
+            MealPhotos(key:ValueKey('${meal.id}-${meal.capturedAt}-${meal.type.name}-${meal.photoCount}'),meal:meal),
             ListTile(title: Text(meal.type.label),subtitle: Text('${meal.photoCount} foto(s) · ${DateFormat('dd/MM HH:mm').format(meal.capturedAt)}${meal.notes.isEmpty?'':' • ${meal.notes}'}'),
               trailing: PopupMenuButton<String>(onSelected:(v)=>v=='edit'?edit(meal):remove(meal),itemBuilder:(_)=>const [PopupMenuItem(value:'edit',child:Text('Editar')),PopupMenuItem(value:'delete',child:Text('Eliminar'))]))
           ]))
@@ -137,7 +137,7 @@ class _MealEditorState extends State<MealEditor> {
   Widget build(BuildContext context)=>SafeArea(child: Padding(
     padding: EdgeInsets.fromLTRB(20,20,20,20+MediaQuery.viewInsetsOf(context).bottom),
     child: SingleChildScrollView(child: Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-      Text('Registrar comida',style:Theme.of(context).textTheme.headlineSmall),
+      Text(widget.existing==null?'Registrar comida':'Editar comida',style:Theme.of(context).textTheme.headlineSmall),
       const SizedBox(height:12),
       SizedBox(height:160,child:ListView(scrollDirection:Axis.horizontal,children:[for(final path in widget.sources??[widget.source]) Padding(padding:const EdgeInsets.only(right:8),child:Stack(children:[ClipRRect(borderRadius:BorderRadius.circular(16),child:Image.file(File(path),height:160,width:160,fit:BoxFit.cover)),if((widget.sources?.length??0)>1)Positioned(right:0,top:0,child:IconButton.filled(onPressed:taking?null:()=>setState(()=>widget.sources!.remove(path)),icon:const Icon(Icons.close)))])),if(widget.sources!=null&&widget.sources!.length<12)OutlinedButton(onPressed:taking?null:addPhoto,child:const Column(mainAxisAlignment:MainAxisAlignment.center,children:[Icon(Icons.add_a_photo),Text('Agregar foto')]))])),
       const SizedBox(height:12),
@@ -147,7 +147,7 @@ class _MealEditorState extends State<MealEditor> {
       const SizedBox(height:12),
       TextField(controller:notes,decoration:const InputDecoration(labelText:'Observaciones (opcional)',border:OutlineInputBorder()),maxLines:2),
       const SizedBox(height:16),
-      SizedBox(width:double.infinity,child:FilledButton(onPressed:taking?null:()=>Navigator.pop(context,Meal(id:widget.existing?.id??widget.at.microsecondsSinceEpoch.toString(),capturedAt:at,type:type,notes:notes.text.trim(),photoCount:widget.existing?.photoCount??widget.sources?.length??1)),child:const Text('Guardar comida')))
+      SizedBox(width:double.infinity,child:FilledButton(onPressed:taking?null:()=>Navigator.pop(context,Meal(id:widget.existing?.id??widget.at.microsecondsSinceEpoch.toString(),capturedAt:at,type:type,notes:notes.text.trim(),photoCount:widget.sources?.length??widget.existing?.photoCount??1)),child:const Text('Guardar comida')))
     ]))));
 }
 

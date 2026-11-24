@@ -73,6 +73,68 @@ class MealStore {
     }
     await writeMetadata(meal);
   }
+  Future<List<String>> editSources(Meal meal) async {
+    final dir=await directory();
+    final result=<String>[];
+    for(var i=0;i<meal.photoCount;i++){
+      final original=File('${dir.path}/${meal.photoStem(i)}.original');
+      result.add(await original.exists()?original.path:(await photo(meal,i)).path);
+    }
+    return result;
+  }
+  Future<void> replacePhotos(Meal previous, Meal updated, List<String> sources) async {
+    if(previous.id!=updated.id || sources.length!=updated.photoCount || sources.isEmpty || sources.length>12)throw ArgumentError('Fotos invalidas');
+    final dir=await directory();
+    final stage=await dir.createTemp('edit-');
+    final oldSources=await editSources(previous);
+    final backups=<String,File>{};
+    var replacing=false;
+    try{
+      for(var i=0;i<previous.photoCount;i++){
+        for(final suffix in ['jpg','original']){
+          final name='${previous.photoStem(i)}.$suffix';
+          final file=File('${dir.path}/$name');
+          if(await file.exists())backups[name]=await file.copy('${stage.path}/old-$name');
+        }
+      }
+      for(var i=0;i<sources.length;i++){
+        final stem=updated.photoStem(i);
+        final source=File(sources[i]);
+        final oldIndex=oldSources.indexOf(source.path);
+        // Older records may have only a stamped JPEG, so preserve its pixels
+        // unless a replacement is captured.
+        if(oldIndex>=0 && !source.path.endsWith('.original')){
+          if(previous.type!=updated.type || previous.capturedAt!=updated.capturedAt)throw StateError('Una foto antigua no tiene original. Elimina esa foto o conserva su fecha y categoria.');
+          await source.copy('${stage.path}/$stem.jpg');
+        }else{
+          final bytes=await source.readAsBytes();
+          final decoded=img.decodeImage(bytes);
+          if(decoded==null)throw const FormatException('Imagen no valida');
+          final oriented=img.bakeOrientation(decoded);
+          final picture=oriented.width>1600?img.copyResize(oriented,width:1600):oriented;
+          stamp(picture,updated);
+          await File('${stage.path}/$stem.original').writeAsBytes(bytes);
+          await File('${stage.path}/$stem.jpg').writeAsBytes(img.encodeJpg(picture,quality:85));
+        }
+      }
+      replacing=true;
+      await _deletePhotos(previous);
+      for(var i=0;i<updated.photoCount;i++){
+        for(final suffix in ['jpg','original']){
+          final name='${updated.photoStem(i)}.$suffix';
+          final file=File('${stage.path}/$name');
+          if(await file.exists())await file.copy('${dir.path}/$name');
+        }
+      }
+      await writeMetadata(updated);
+    }catch(_){
+      if(replacing){
+        await _deletePhotos(updated);
+        for(final entry in backups.entries){await entry.value.copy('${dir.path}/${entry.key}');}
+      }
+      rethrow;
+    }finally{await stage.delete(recursive:true);}
+  }
   Future<void> writeMetadata(Meal meal) async {
     await (await database()).put(meal);
   }
