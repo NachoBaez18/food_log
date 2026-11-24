@@ -10,6 +10,7 @@ import '../domain/meal.dart';
 import '../../../core/theme_preferences.dart';
 import '../../reports/report_panel.dart';
 import '../../settings/backup_panel.dart';
+import '../../onboarding/guided_tour.dart';
 
 class DiaryPage extends ConsumerStatefulWidget {
   const DiaryPage({super.key});
@@ -22,6 +23,18 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
   bool busy = false;
   int tab = 0;
   DateTime? selectedDay;
+  final tourKeys=List.generate(8,(_)=>GlobalKey());
+  bool touring=false;
+  @override
+  void initState(){super.initState();WidgetsBinding.instance.addPostFrameCallback((_)=>maybeTour());}
+  Future<void> maybeTour() async {
+    try{if(!await TourPreferences.seen()&&mounted)await startTour();}catch(e){error(e);}
+  }
+  Future<void> startTour() async {
+    if(touring||!mounted)return;
+    touring=true;
+    try{await GuidedTour.run(context,keys:tourKeys,selectTab:(i){if(mounted)setState((){tab=i;selectedDay=null;});});await TourPreferences.complete();}catch(e){error(e);}finally{touring=false;}
+  }
   static DateTime monday(DateTime d) => DateTime(d.year,d.month,d.day-d.weekday+1);
   DateTime shift(int days) => DateTime(week.year,week.month,week.day+days);
   void error(Object e) {
@@ -77,18 +90,18 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('FoodLog'), actions: [IconButton(tooltip:'Semana actual',onPressed: () => setState(() {week=monday(DateTime.now());selectedDay=null;}),icon: const Icon(Icons.today))]),
       bottomNavigationBar: NavigationBar(selectedIndex: tab, onDestinationSelected: (i) => setState(() { tab=i; selectedDay=null; if(i==0) week=monday(DateTime.now()); }), destinations: const [NavigationDestination(icon: Icon(Icons.home_outlined),selectedIcon: Icon(Icons.home),label:'Inicio'),NavigationDestination(icon:Icon(Icons.calendar_month),label:'Historial'),NavigationDestination(icon:Icon(Icons.description_outlined),label:'Reportes'),NavigationDestination(icon:Icon(Icons.settings_outlined),label:'Ajustes')]),
-      floatingActionButton: FloatingActionButton.extended(onPressed: busy ? null : capture, icon: const Icon(Icons.camera_alt_outlined),label: const Text('Registrar comida')),
+      floatingActionButton: FloatingActionButton.extended(key:tourKeys[1],onPressed: busy ? null : capture, icon: const Icon(Icons.camera_alt_outlined),label: const Text('Registrar comida')),
       body: data.when(loading: () => const Center(child:CircularProgressIndicator()), error: (e,_) => Center(child: TextButton(onPressed: () => ref.invalidate(mealsProvider),child: Text('Reintentar: $e'))), data: (all) {
-        if(tab==3) return ListView(children:[const ListTile(title:Text('FoodLog'),subtitle:Text('Diario privado · Sin conexión')),ListTile(leading:const Icon(Icons.palette_outlined),title:const Text('Apariencia'),subtitle:const Text('Claro, oscuro o sistema'),onTap:()=>showDialog<void>(context:context,builder:(c)=>SimpleDialog(title:const Text('Apariencia'),children:ThemeMode.values.map((m)=>SimpleDialogOption(onPressed:(){ref.read(themeModeProvider.notifier).select(m).catchError((Object e)=>error(e));Navigator.pop(c);},child:Text(m==ThemeMode.system?'Sistema':m==ThemeMode.light?'Claro':'Oscuro'))).toList()))),const Divider(),const ReminderPanel(),const Divider(),const BackupPanel()]);
+        if(tab==3) return ListView(children:[ListTile(leading:const Icon(Icons.help_outline),title:const Text('Tutorial de FoodLog'),subtitle:const Text('Aprende a utilizar la aplicación'),onTap:startTour),const ListTile(title:Text('FoodLog'),subtitle:Text('Diario privado · Sin conexión')),ListTile(key:tourKeys[5],leading:const Icon(Icons.palette_outlined),title:const Text('Apariencia'),subtitle:const Text('Claro, oscuro o sistema'),onTap:()=>showDialog<void>(context:context,builder:(c)=>SimpleDialog(title:const Text('Apariencia'),children:ThemeMode.values.map((m)=>SimpleDialogOption(onPressed:(){ref.read(themeModeProvider.notifier).select(m).catchError((Object e)=>error(e));Navigator.pop(c);},child:Text(m==ThemeMode.system?'Sistema':m==ThemeMode.light?'Claro':'Oscuro'))).toList()))),const Divider(),ReminderPanel(key:tourKeys[6]),const Divider(),BackupPanel(key:tourKeys[7])]);
         final meals = all.where((m) => !m.capturedAt.isBefore(week) && m.capturedAt.isBefore(shift(7))).toList();
-        if(tab==2) return ReportPanel(meals:all);
+        if(tab==2) return ReportPanel(key:tourKeys[4],meals:all);
         final visible = meals.where((m)=>selectedDay==null || DateUtils.isSameDay(m.capturedAt,selectedDay)).toList();
         return ListView(padding: const EdgeInsets.fromLTRB(16,8,16,100),children: [
-          Text(tab==1?'Historial':'Mi diario',style: theme.textTheme.headlineMedium),
+          Text(tab==1?'Historial':'Mi diario',key:tourKeys[0],style: theme.textTheme.headlineMedium),
           const Text('Tus comidas, en un solo lugar.'),
           const SizedBox(height:16),
-          if(tab==1) CalendarDatePicker(initialDate: selectedDay??week,firstDate:DateTime(2000),lastDate:DateTime(2100),onDateChanged:(d)=>setState((){week=monday(d);selectedDay=d;})),
-          Card(color: theme.colorScheme.secondaryContainer,child: Padding(padding: const EdgeInsets.all(12),child: Column(children: [
+          if(tab==1) CalendarDatePicker(key:tourKeys[3],initialDate: selectedDay??week,firstDate:DateTime(2000),lastDate:DateTime(2100),onDateChanged:(d)=>setState((){week=monday(d);selectedDay=d;})),
+          Card(key:tourKeys[2],color: theme.colorScheme.secondaryContainer,child: Padding(padding: const EdgeInsets.all(12),child: Column(children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,children:[
               IconButton(onPressed: () => setState(() {week=shift(-7);selectedDay=null;}),icon: const Icon(Icons.chevron_left)),
               Text('${DateFormat('dd/MM').format(week)} – ${DateFormat('dd/MM/yyyy').format(shift(6))}',style: theme.textTheme.titleMedium),
