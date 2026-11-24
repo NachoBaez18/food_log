@@ -71,11 +71,11 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
     final theme = Theme.of(context);
     final data = ref.watch(mealsProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('FoodLog'), actions: [IconButton(tooltip:'Semana actual',onPressed: () => setState(() => week = monday(DateTime.now())),icon: const Icon(Icons.today))]),
+      appBar: AppBar(title: const Text('FoodLog'), actions: [IconButton(tooltip:'Semana actual',onPressed: () => setState(() {week=monday(DateTime.now());selectedDay=null;}),icon: const Icon(Icons.today))]),
       bottomNavigationBar: NavigationBar(selectedIndex: tab, onDestinationSelected: (i) => setState(() { tab=i; selectedDay=null; if(i==0) week=monday(DateTime.now()); }), destinations: const [NavigationDestination(icon: Icon(Icons.home_outlined),selectedIcon: Icon(Icons.home),label:'Inicio'),NavigationDestination(icon:Icon(Icons.calendar_month),label:'Historial'),NavigationDestination(icon:Icon(Icons.description_outlined),label:'Reportes'),NavigationDestination(icon:Icon(Icons.settings_outlined),label:'Ajustes')]),
       floatingActionButton: FloatingActionButton.extended(onPressed: busy ? null : capture, icon: const Icon(Icons.camera_alt_outlined),label: const Text('Registrar comida')),
       body: data.when(loading: () => const Center(child:CircularProgressIndicator()), error: (e,_) => Center(child: TextButton(onPressed: () => ref.invalidate(mealsProvider),child: Text('Reintentar: $e'))), data: (all) {
-        if(tab==3) return ListView(children:[const ListTile(title:Text('FoodLog'),subtitle:Text('Diario privado · Sin conexión')),ListTile(leading:const Icon(Icons.palette_outlined),title:const Text('Apariencia'),subtitle:const Text('Claro, oscuro o sistema'),onTap:()=>showDialog<void>(context:context,builder:(c)=>SimpleDialog(title:const Text('Apariencia'),children:ThemeMode.values.map((m)=>SimpleDialogOption(onPressed:(){ref.read(themeModeProvider.notifier).state=m;Navigator.pop(c);},child:Text(m==ThemeMode.system?'Sistema':m==ThemeMode.light?'Claro':'Oscuro'))).toList())))]);
+        if(tab==3) return ListView(children:[const ListTile(title:Text('FoodLog'),subtitle:Text('Diario privado · Sin conexión')),ListTile(leading:const Icon(Icons.palette_outlined),title:const Text('Apariencia'),subtitle:const Text('Claro, oscuro o sistema'),onTap:()=>showDialog<void>(context:context,builder:(c)=>SimpleDialog(title:const Text('Apariencia'),children:ThemeMode.values.map((m)=>SimpleDialogOption(onPressed:(){ref.read(themeModeProvider.notifier).select(m).catchError((Object e)=>error(e));Navigator.pop(c);},child:Text(m==ThemeMode.system?'Sistema':m==ThemeMode.light?'Claro':'Oscuro'))).toList())))]);
         final meals = all.where((m) => !m.capturedAt.isBefore(week) && m.capturedAt.isBefore(shift(7))).toList();
         if(tab==2) return ReportPanel(meals:all);
         final visible = meals.where((m)=>selectedDay==null || DateUtils.isSameDay(m.capturedAt,selectedDay)).toList();
@@ -86,9 +86,9 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
           if(tab==1) CalendarDatePicker(initialDate: selectedDay??week,firstDate:DateTime(2000),lastDate:DateTime(2100),onDateChanged:(d)=>setState((){week=monday(d);selectedDay=d;})),
           Card(color: theme.colorScheme.secondaryContainer,child: Padding(padding: const EdgeInsets.all(12),child: Column(children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,children:[
-              IconButton(onPressed: () => setState(() => week = shift(-7)),icon: const Icon(Icons.chevron_left)),
+              IconButton(onPressed: () => setState(() {week=shift(-7);selectedDay=null;}),icon: const Icon(Icons.chevron_left)),
               Text('${DateFormat('dd/MM').format(week)} – ${DateFormat('dd/MM/yyyy').format(shift(6))}',style: theme.textTheme.titleMedium),
-              IconButton(onPressed: () => setState(() => week = shift(7)),icon: const Icon(Icons.chevron_right)),
+              IconButton(onPressed: () => setState(() {week=shift(7);selectedDay=null;}),icon: const Icon(Icons.chevron_right)),
             ]),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,children: List.generate(7,(i) {
               final day = shift(i);
