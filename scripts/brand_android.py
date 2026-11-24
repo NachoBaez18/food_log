@@ -54,3 +54,25 @@ for folder in ['values-v31','values-night-v31']:
             item=ET.SubElement(style,'item',{'name':name})
         item.text=value
     tree.write(styles,encoding='utf-8',xml_declaration=True)
+
+# Install native, offline reminder integration into the generated Android scaffold.
+import shutil
+android_ns='{http://schemas.android.com/apk/res/android}'
+tree=ET.parse(manifest)
+root=tree.getroot()
+app=root.find('application')
+for permission in ['android.permission.CAMERA','android.permission.POST_NOTIFICATIONS','android.permission.RECEIVE_BOOT_COMPLETED']:
+    if not any(e.get(android_ns+'name')==permission for e in root.findall('uses-permission')):
+        root.insert(0,ET.Element('uses-permission',{android_ns+'name':permission}))
+for name in ['.ReminderReceiver','.ReminderBootReceiver']:
+    if not any(e.get(android_ns+'name')==name for e in app.findall('receiver')):
+        receiver=ET.SubElement(app,'receiver',{android_ns+'name':name,android_ns+'exported':'false'})
+        if name.endswith('BootReceiver'):
+            f=ET.SubElement(receiver,'intent-filter')
+            for action in ['android.intent.action.BOOT_COMPLETED','android.intent.action.TIME_SET','android.intent.action.TIMEZONE_CHANGED','android.intent.action.MY_PACKAGE_REPLACED']:
+                ET.SubElement(f,'action',{android_ns+'name':action})
+tree.write(manifest,encoding='utf-8',xml_declaration=True)
+target=Path('android/app/src/main/kotlin/com/foodlog/foodlog')
+target.mkdir(parents=True,exist_ok=True)
+for source in Path('scripts/android').glob('*.kt'):
+    shutil.copyfile(source,target/source.name)
